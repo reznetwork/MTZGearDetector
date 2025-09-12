@@ -64,6 +64,9 @@
       \-> /api/cal/record?slot=... (G1..G9,R1,R2,NMID,NSEL)
       \-> /api/cal/save | /api/cal/load | /api/cal/clear
   • /net        : set Wi‑Fi password for SSID "Tractor" and reboot
+    (tries DHCP for 10 s then uses static 192.168.4.10/24 via 192.168.4.1;
+     if still disconnected, hosts AP "TractorShift-XXYY" with password
+     "shift1234")
 
   Build: Arduino IDE (ESP32 board core), select LOLIN S2 mini (ESP32‑S2).
   Libraries: built‑in WiFi, WebServer; install "Modbus-ESP8266".

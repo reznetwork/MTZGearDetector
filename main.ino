@@ -79,20 +79,14 @@
 enum Slot : uint8_t; // defined later
 typedef struct { Slot s; uint32_t score; bool ok; } Best; // used in generated prototypes
 
-#include <stdarg.h>
-static inline void LOG_BEGIN(){ Serial.begin(115200); delay(200); }
-static inline void logln(const char* s){ Serial.println(s); }
-static inline void logf(const char* fmt, ...){ char buf[256]; va_list ap; va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap); Serial.println(buf); }
-
-// ---------------- Pins: 2 independent I²C buses ----------------
+// ---------------- Configuration ----------------
+// Pins: 2 independent I²C buses
 constexpr int SDA_X = 33;  // I2C for X axis AS5600
 constexpr int SCL_X = 35;
 constexpr int SDA_Y = 9;   // I2C for Y axis AS5600
 constexpr int SCL_Y = 11;
-TwoWire WireX = TwoWire(0);
-TwoWire WireY = TwoWire(1);
 
-// ---------------- AS5600 registers ----------------
+// AS5600 registers
 constexpr uint8_t AS5600_ADDR = 0x36;
 constexpr uint8_t REG_STATUS  = 0x0B;   // MD ML MH bits
 constexpr uint8_t REG_AGC     = 0x1A;
@@ -101,9 +95,24 @@ constexpr uint8_t REG_MAG_L   = 0x1C;
 constexpr uint8_t REG_ANG_H   = 0x0E;   // ANGLE (12 bit)
 constexpr uint8_t REG_ANG_L   = 0x0F;
 
-// ---------------- Wi‑Fi ----------------
-String wifiSsid = "Tractor";    // fixed SSID per requirements
-String wifiPass = "";           // configurable in /net
+// Wi‑Fi configuration
+String wifiSsid = "Tractor";            // fixed SSID per requirements
+String wifiPass = "";                   // configurable in /net
+static constexpr char WIFI_AP_SSID_PREFIX[] = "TractorShift";
+static constexpr char WIFI_AP_PASS[]        = "shift1234";
+const IPAddress STATIC_IP(192,168,4,10);
+const IPAddress STATIC_GATE(192,168,4,1);
+const IPAddress STATIC_MASK(255,255,255,0);
+const unsigned long DHCP_TIMEOUT_MS = 10000; // milliseconds to wait for DHCP
+
+#include <stdarg.h>
+static inline void LOG_BEGIN(){ Serial.begin(115200); delay(200); }
+static inline void logln(const char* s){ Serial.println(s); }
+static inline void logf(const char* fmt, ...){ char buf[256]; va_list ap; va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap); Serial.println(buf); }
+
+// ---------------- Global objects ----------------
+TwoWire WireX = TwoWire(0);
+TwoWire WireY = TwoWire(1);
 bool   wifiUp   = false;
 
 // ---------------- HTTP server ----------------
@@ -406,15 +415,28 @@ void apiCalClear(){ clearCal(); http.send(200, "text/plain", "Cleared\n"); }
 void wifiJoinOrAP(){
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
+  // Attempt DHCP
   WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
   unsigned long t0=millis();
-  while (WiFi.status()!=WL_CONNECTED && millis()-t0<10000) delay(50);
+  while (WiFi.status()!=WL_CONNECTED && millis()-t0<DHCP_TIMEOUT_MS) delay(50);
   wifiUp = (WiFi.status()==WL_CONNECTED);
+
+  // If DHCP failed, try static IP configuration
+  if (!wifiUp){
+    WiFi.config(STATIC_IP, STATIC_GATE, STATIC_MASK);
+    WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
+    t0=millis();
+    while (WiFi.status()!=WL_CONNECTED && millis()-t0<DHCP_TIMEOUT_MS) delay(50);
+    wifiUp = (WiFi.status()==WL_CONNECTED);
+  }
+
+  // If still not connected, fall back to Access Point mode
   if (!wifiUp){
     WiFi.mode(WIFI_AP);
     char ap[32]; uint64_t mac = ESP.getEfuseMac();
-    snprintf(ap,sizeof(ap),"TractorShift-%02X%02X", (unsigned)((mac>>8)&0xFF), (unsigned)(mac&0xFF));
-    WiFi.softAP(ap, "shift1234");
+    snprintf(ap,sizeof(ap),"%s-%02X%02X", WIFI_AP_SSID_PREFIX,
+             (unsigned)((mac>>8)&0xFF), (unsigned)(mac&0xFF));
+    WiFi.softAP(ap, WIFI_AP_PASS);
     wifiUp=false;
   }
   logWifiStatus();
