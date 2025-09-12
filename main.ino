@@ -405,22 +405,48 @@ void apiCalClear(){ clearCal(); http.send(200, "text/plain", "Cleared\n"); }
 // ---------------- Wi‑Fi join / fallback AP ----------------
 void wifiJoinOrAP(){
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
   unsigned long t0=millis();
   while (WiFi.status()!=WL_CONNECTED && millis()-t0<10000) delay(50);
   wifiUp = (WiFi.status()==WL_CONNECTED);
-  if (wifiUp){
-    IPAddress ip = WiFi.localIP();
-    logf("[WiFi] STA connected ssid=%s ip=%u.%u.%u.%u", wifiSsid.c_str(), ip[0],ip[1],ip[2],ip[3]);
-  } else {
+  if (!wifiUp){
     WiFi.mode(WIFI_AP);
     char ap[32]; uint64_t mac = ESP.getEfuseMac();
     snprintf(ap,sizeof(ap),"TractorShift-%02X%02X", (unsigned)((mac>>8)&0xFF), (unsigned)(mac&0xFF));
     WiFi.softAP(ap, "shift1234");
-    IPAddress ip = WiFi.softAPIP();
-    logf("[WiFi] AP mode ssid=%s ip=%u.%u.%u.%u", ap, ip[0],ip[1],ip[2],ip[3]);
-    wifiUp=true;
+    wifiUp=false;
   }
+  logWifiStatus();
+}
+
+void logWifiStatus(){
+  if (WiFi.getMode()==WIFI_MODE_STA && WiFi.status()==WL_CONNECTED){
+    IPAddress ip = WiFi.localIP();
+    logf("[WiFi] STA connected ssid=%s ip=%u.%u.%u.%u", wifiSsid.c_str(), ip[0],ip[1],ip[2],ip[3]);
+  } else if (WiFi.getMode()==WIFI_MODE_AP){
+    IPAddress ip = WiFi.softAPIP();
+    logf("[WiFi] AP mode ssid=%s ip=%u.%u.%u.%u", WiFi.softAPSSID().c_str(), ip[0],ip[1],ip[2],ip[3]);
+  } else {
+    logln("[WiFi] disconnected");
+  }
+}
+
+// Ensure Wi‑Fi connectivity after setup. If the station disconnects, try to
+// reconnect or fall back to access point mode again. Updates wifiUp flag so
+// status bits and diagnostics reflect the current state accurately.
+void maintainWifi(){
+  bool prev = wifiUp;
+  if (WiFi.getMode() == WIFI_MODE_STA){
+    wifiUp = (WiFi.status() == WL_CONNECTED);
+    if (!wifiUp){
+      wifiJoinOrAP();
+      return; // wifiJoinOrAP logs status
+    }
+  } else {
+    wifiUp = false;
+  }
+  if (wifiUp != prev) logWifiStatus();
 }
 
 // ---------------- Setup/loop ----------------
@@ -457,6 +483,7 @@ void setup(){
 }
 
 void loop(){
+  maintainWifi();
   http.handleClient();
 
   // I²C reads
