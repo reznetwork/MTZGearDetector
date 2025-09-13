@@ -404,9 +404,7 @@ void apiCalSave(){ saveCal(); http.send(200, "text/plain", "Saved\n"); }
 void apiCalLoad(){
   bool ok = loadCal();
   logf("[CAL] %s", ok?"loaded":"empty");
-  http.send(200, "text/plain", ok ? "Loaded
-" : "No data
-");
+  http.send(200, "text/plain", ok ? "Loaded\n" : "No data\n");
 }
 
 void apiCalClear(){ clearCal(); http.send(200, "text/plain", "Cleared\n"); }
