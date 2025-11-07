@@ -74,7 +74,7 @@
   • /manual     : manual override enable/disable and force gear
       \-> /api/manual/enable?on=0|1
       \-> /api/manual/set?code=0..9|101|102|65535
-  • /net        : set Wi‑Fi password for SSID "Tracktor" and reboot
+  • Wi‑Fi credentials are fixed (SSID "Tracktor")
 
   Build: Arduino IDE (ESP32 board core), select LOLIN S2 mini (ESP32‑S2).
   Libraries: built‑in WiFi, WebServer; install "Modbus-ESP8266".
@@ -370,11 +370,6 @@ GridSlot classifyGrid(uint16_t x, uint16_t y){
 // ---------------- Wi‑Fi helpers ----------------
 void logWifiStatus();
 
-void wifiLoadCreds() {
-  String saved = prefs.getString("pass", "");
-  if (saved.length() > 0) wifiPass = saved;
-}
-
 void logWifiStatus(){
   if (WiFi.getMode()==WIFI_MODE_STA && WiFi.status()==WL_CONNECTED){
     IPAddress ip = WiFi.localIP();
@@ -429,7 +424,7 @@ String htmlHeader(const char* title){
 
 void pageIndex(){
   String s = htmlHeader("MTZ Shift — Index");
-  s += F("<h2>MTZ Shift Detector</h2><p><a href='/status'>/status</a> · <a href='/grid/tune'>/grid/tune</a> · <a href='/grid'>/grid</a> · <a href='/grid/test'>/grid/test</a> · <a href='/net'>/net</a> · <a href='/log'>/log</a> · <a href='/manual'>/manual</a></p>");
+  s += F("<h2>MTZ Shift Detector</h2><p><a href='/status'>/status</a> · <a href='/grid/tune'>/grid/tune</a> · <a href='/grid'>/grid</a> · <a href='/grid/test'>/grid/test</a> · <a href='/log'>/log</a> · <a href='/manual'>/manual</a></p>");
   s += F("<p>Modbus TCP on port <code>502</code>. Poll holding registers 40001…</p>");
   s += F("</body></html>"); http.send(200, "text/html", s);
 }
@@ -462,24 +457,6 @@ void pageLog(){
     s += String(e.t); s += ","; s += String(e.code); s += "\n";
   }
   http.send(200, "text/plain", s);
-}
-
-void pageNet(){
-  String s = htmlHeader("Network");
-  s += F("<h3>Wi‑Fi</h3><p>Target SSID: <code>Tracktor</code></p>");
-  s += F("<form method='POST' action='/net'>Password: <input name='pass' type='password' placeholder='(leave empty for open)'><button type='submit'>Save & Reboot</button></form>");
-  s += F("</body></html>");
-  http.send(200, "text/html", s);
-}
-
-void pageNetPost(){
-  if (http.hasArg("pass")) {
-    wifiPass = http.arg("pass");
-    prefs.putString("pass", wifiPass);
-  }
-  http.send(200, "text/html", F("Saved. Rebooting…<script>setTimeout(()=>location.href='/',1500)</script>"));
-  delay(500);
-  ESP.restart();
 }
 
 // ---------- Manual override page ----------
@@ -786,7 +763,6 @@ void setup(){
   delay(30000);
   Serial.println("[MTZ] boot");
   prefs.begin("shift", false);
-  wifiLoadCreds();
   /* legacy loadCal removed */
   loadGrid();
 
@@ -798,8 +774,6 @@ void setup(){
   http.on("/", pageIndex);
   http.on("/status", pageStatus);
   http.on("/log", pageLog);
-  http.on("/net", HTTP_GET, pageNet);
-  http.on("/net", HTTP_POST, pageNetPost);
   http.on("/manual", pageManual);
   http.on("/api/manual/enable", apiManualEnable);
   http.on("/api/manual/set",    apiManualSet);
