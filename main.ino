@@ -488,7 +488,7 @@ String htmlHeader(const char* title){
 void pageIndex(){
   String s = htmlHeader("MTZ Shift Detector");
   s += "<h3>MTZ Shift Detector</h3>";
-  s += "<p><a href='/status'>Status</a> | <a href='/manual'>Manual override</a> | <a href='/grid'>Polygon calibration</a> | <a href='/grid/test'>Plane test</a> | <a href='/grid/tune'>Tunables</a></p>";
+  s += "<p><a href='/status'>Status</a> | <a href='/manual'>Manual override</a> | <a href='/grid'>Polygon calibration &amp; plane</a> | <a href='/grid/tune'>Tunables</a></p>";
   s += "</body></html>";
   http.send(200,"text/html",s);
 }
@@ -618,6 +618,14 @@ void pageGrid(){
   s += F("<div id='out' style='padding:8px;background:#f4f4f4;border-radius:8px'></div>");
 
   s += R"HTML(
+<hr>
+<h4>Live plane view</h4>
+<p>This visualization updates 4×/second using <code>/api/grid/scores</code>. It overlays all
+polygons and the current filtered point so you can confirm coverage while recording.</p>
+<canvas id="plane" width="480" height="480"
+        style="border:1px solid #ccc;border-radius:8px;max-width:100%;"></canvas>
+<pre id="meta" style="background:#f7f7f7;margin-top:8px;padding:8px;border-radius:8px;white-space:pre-wrap"></pre>
+
 <script>
 function rec(name){
   fetch('/api/grid/record?slot='+encodeURIComponent(name))
@@ -631,74 +639,7 @@ function act(a){
     .then(t => { document.getElementById('out').textContent = t; })
     .catch(e => { document.getElementById('out').textContent = 'ERR: ' + e; });
 }
-</script>
-)HTML";
 
-  s += F("</body></html>");
-  http.send(200,"text/html",s);
-}
-
-// ---------- 2D plane / polygon scores ----------
-static String gridScoresJSON(){
-  String out; out.reserve(2200);
-  out += '{';
-  out += "\"filtX\":" + String(filtX) + ",";
-  out += "\"filtY\":" + String(filtY) + ",";
-  out += "\"enter_th\":" + String(GRID_ENTER_TH) + ",";
-  out += "\"exit_th\":"  + String(GRID_EXIT_TH)  + ",";
-  out += "\"range\":"    + String((uint16_t)rangeLatched) + ",";
-  out += "\"gridBest\":" + String(gridBest) + ",";
-  out += "\"gridCand\":" + String(gridCandidate) + ",";
-  out += "\"gridDebounced\":" + String(gridDebounced) + ",";
-
-  // list nodes + find best score for debug
-  uint32_t bestSc = 0xFFFFFFFFu;
-  int      bestIdx = -1;
-
-  out += "\"nodes\":[";
-  for (int i=0;i<GS_COUNT;i++){
-    const auto &p = planeCal.node[i];
-    uint32_t sc = polyScore(i, filtX, filtY);
-    if (p.valid && sc < bestSc) { bestSc = sc; bestIdx = i; }
-
-    if (i) out += ',';
-    out += '{';
-    out += "\"id\":"    + String(i) + ",";
-    out += "\"name\":\"" + String(GRID_NAMES[i]) + "\",";
-    out += "\"valid\":" + String(p.valid ? 1 : 0) + ",";
-    out += "\"score\":" + String(sc) + ",";
-    out += "\"n\":"     + String(p.n) + ",";
-    out += "\"verts\":[";
-    for (uint8_t k=0;k<p.n;k++){
-      if (k) out += ',';
-      out += "[" + String(p.x[k]) + "," + String(p.y[k]) + "]";
-    }
-    out += "]";
-    out += '}';
-  }
-  out += "],";
-
-  out += "\"best\":{";
-  out += "\"id\":"    + String(bestIdx) + ",";
-  out += "\"score\":" + String(bestSc);
-  out += "}";
-  out += '}';
-  return out;
-}
-
-// ---------- 2D plane / polygon test page ----------
-void pageGridTest(){
-  String s = htmlHeader("2D plane / polygon test");
-
-  s += R"HTML(
-<h3>2D plane / polygon test</h3>
-<p>This view shows the live filtered sensor point on a 2D plane (0..4095 &times; 0..4095)
-and all calibrated polygons for each gear node.</p>
-<canvas id="plane" width="480" height="480"
-        style="border:1px solid #ccc;border-radius:8px;max-width:100%;"></canvas>
-<pre id="meta" style="background:#f7f7f7;margin-top:8px;padding:8px;border-radius:8px;white-space:pre-wrap"></pre>
-
-<script>
 (function(){
   const canvas = document.getElementById('plane');
   const ctx    = canvas.getContext('2d');
@@ -786,9 +727,9 @@ and all calibrated polygons for each gear node.</p>
         drawSnapshot(j);
         document.getElementById('meta').textContent =
           "filt=(" + j.filtX + "," + j.filtY + ")  range=" + j.range +
-          "\\ninstant=" + j.gridBest + "  candidate=" + j.gridCand +
+          "\ninstant=" + j.gridBest + "  candidate=" + j.gridCand +
           "  debounced=" + j.gridDebounced +
-          "\\npolygons: " + j.nodes.map(n => n.name + ":" + n.n).join(", ");
+          "\npolygons: " + j.nodes.map(n => n.name + ":" + n.n).join(", ");
       })
       .catch(e => {
         document.getElementById('meta').textContent = "ERR: " + e;
@@ -801,7 +742,61 @@ and all calibrated polygons for each gear node.</p>
 )HTML";
 
   s += F("</body></html>");
-  http.send(200,"text/html", s);
+  http.send(200,"text/html",s);
+}
+
+// ---------- 2D plane / polygon scores ----------
+static String gridScoresJSON(){
+  String out; out.reserve(2200);
+  out += '{';
+  out += "\"filtX\":" + String(filtX) + ",";
+  out += "\"filtY\":" + String(filtY) + ",";
+  out += "\"enter_th\":" + String(GRID_ENTER_TH) + ",";
+  out += "\"exit_th\":"  + String(GRID_EXIT_TH)  + ",";
+  out += "\"range\":"    + String((uint16_t)rangeLatched) + ",";
+  out += "\"gridBest\":" + String(gridBest) + ",";
+  out += "\"gridCand\":" + String(gridCandidate) + ",";
+  out += "\"gridDebounced\":" + String(gridDebounced) + ",";
+
+  // list nodes + find best score for debug
+  uint32_t bestSc = 0xFFFFFFFFu;
+  int      bestIdx = -1;
+
+  out += "\"nodes\":[";
+  for (int i=0;i<GS_COUNT;i++){
+    const auto &p = planeCal.node[i];
+    uint32_t sc = polyScore(i, filtX, filtY);
+    if (p.valid && sc < bestSc) { bestSc = sc; bestIdx = i; }
+
+    if (i) out += ',';
+    out += '{';
+    out += "\"id\":"    + String(i) + ",";
+    out += "\"name\":\"" + String(GRID_NAMES[i]) + "\",";
+    out += "\"valid\":" + String(p.valid ? 1 : 0) + ",";
+    out += "\"score\":" + String(sc) + ",";
+    out += "\"n\":"     + String(p.n) + ",";
+    out += "\"verts\":[";
+    for (uint8_t k=0;k<p.n;k++){
+      if (k) out += ',';
+      out += "[" + String(p.x[k]) + "," + String(p.y[k]) + "]";
+    }
+    out += "]";
+    out += '}';
+  }
+  out += "],";
+
+  out += "\"best\":{";
+  out += "\"id\":"    + String(bestIdx) + ",";
+  out += "\"score\":" + String(bestSc);
+  out += "}";
+  out += '}';
+  return out;
+}
+
+// ---------- 2D plane / polygon test page ----------
+void pageGridTest(){
+  // Legacy path keeps compatibility but now serves the combined calibration page
+  pageGrid();
 }
 
 // ---- Tunables page (/grid/tune) and Modbus polling ----
