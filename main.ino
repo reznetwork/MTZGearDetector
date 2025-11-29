@@ -703,9 +703,28 @@ and all calibrated polygons for each gear node.</p>
   const canvas = document.getElementById('plane');
   const ctx    = canvas.getContext('2d');
 
-  // simple linear mapping from raw 0..4095 to canvas coordinates
-  function sx(x){ return (x / 4095) * canvas.width; }
-  function sy(y){ return canvas.height - (y / 4095) * canvas.height; }
+  const X_MIN   = 3500;
+  const X_MAX   = 3900;
+  const Y_RANGE = 4096;
+  const Y_HALF  = Y_RANGE / 2;
+
+  function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+  function wrapY(y){
+    // wrap so that 0 sits at the vertical center of the canvas
+    return ((y + Y_HALF) % Y_RANGE + Y_RANGE) % Y_RANGE - Y_HALF;
+  }
+
+  // Map raw readings to canvas with X cropped to [3500,3900] and Y wrapped
+  // around 0 so the discontinuity is centered vertically on the canvas.
+  function sx(x){
+    const clamped = clamp(x, X_MIN, X_MAX);
+    return ((clamped - X_MIN) / (X_MAX - X_MIN)) * canvas.width;
+  }
+  function sy(y){
+    const wy = wrapY(y);
+    const t  = (wy + Y_HALF) / (Y_RANGE - 1);
+    return canvas.height - t * canvas.height;
+  }
 
   function drawSnapshot(j){
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -715,9 +734,11 @@ and all calibrated polygons for each gear node.</p>
     ctx.lineWidth = 0.5;
     ctx.globalAlpha = 0.25;
     for (let t=0; t<=4; t++){
-      const v = t/4;
-      const x = v * canvas.width;
-      const y = v * canvas.height;
+      const xVal = X_MIN + (t/4) * (X_MAX - X_MIN);
+      const yVal = -Y_HALF + (t/4) * (Y_RANGE - 1);
+
+      const x = sx(xVal);
+      const y = sy(yVal);
       ctx.beginPath();
       ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
       ctx.beginPath();
