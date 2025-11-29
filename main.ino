@@ -85,8 +85,10 @@ constexpr uint8_t REG_MAG_L   = 0x1C;
 Preferences prefs;
 
 // Wi-Fi credentials (loaded from NVS or defaults)
-String wifiSsid   = "MTZ_SHIFT";
-String wifiPass   = "mtzshift";
+String wifiSsid   = "Tracktor";
+String wifiPass   = "ujooCeeph9@$";
+String wifiAPSsid   = "MTZ_SHIFT";
+String wifiAPPass   = "mtzshift";
 
 // Network config
 IPAddress local_IP(192,168,4,1);
@@ -442,7 +444,7 @@ void wifiJoinOrAP(){
     logln("[WiFi] join failed, starting AP only");
     WiFi.mode(WIFI_MODE_AP);
     WiFi.softAPConfig(local_IP, gateway, subnet);
-    WiFi.softAP(wifiSsid.c_str(), wifiPass.c_str());
+    WiFi.softAP(wifiAPSsid.c_str(), wifiAPPass.c_str());
     wifiUp = true;
     logWifiStatus();
   }
@@ -567,12 +569,7 @@ void pageGrid(){
   String s = htmlHeader("Polygon calibration");
   s += F(
     "<h3>Polygon calibration</h3>"
-    "<p>Each gear node is represented as a polygon on the 2D (X,Y) sensor plane.</p>"
-    "<p>When you click <b>Record</b> for a node, the firmware samples several readings "
-    "around the current lever position and appends a rectangle (min/max X and Y) as "
-    "four vertices to that node&#39;s polygon. You can record multiple times per node "
-    "to approximate the actual region shape. If a node runs out of vertex capacity, "
-    "the next Record clears its polygon and starts again.</p>"
+    "<table><tr><th>"
   );
 
   // Helper: print a button and show vertex count
@@ -615,15 +612,13 @@ void pageGrid(){
     "<button onclick=\"act('load')\">Load</button> "
     "<button onclick=\"act('clear')\">Clear</button></p>"
   );
-  s += F("<div id='out' style='padding:8px;background:#f4f4f4;border-radius:8px'></div>");
+  s += F("<div id='out' style='padding:8px;background:#f4f4f4;border-radius:8px'></div></th>");
 
   s += R"HTML(
-<hr>
-<h4>Live plane view</h4>
-<p>This visualization updates 4×/second using <code>/api/grid/scores</code>. It overlays all
-polygons and the current filtered point so you can confirm coverage while recording.</p>
+<th>
 <canvas id="plane" width="480" height="480"
         style="border:1px solid #ccc;border-radius:8px;max-width:100%;"></canvas>
+</th></tr></table>
 <pre id="meta" style="background:#f7f7f7;margin-top:8px;padding:8px;border-radius:8px;white-space:pre-wrap"></pre>
 
 <script>
@@ -911,8 +906,9 @@ float    alpha = 0.2f;           // can be made configurable
 bool     fInit=false; uint16_t fx=0, fy=0;
 
 void setup(){
+  delay(3000);
   LOG_BEGIN();
-  logln("[BOOT] MTZ Shift Detector");
+  logln("[BOOT] MTZ Shift Detector v5");
 
   // I2C
   WireX.begin(SDA_X, SCL_X, 400000);
@@ -922,6 +918,8 @@ void setup(){
   loadGrid();
 
   // WiFi + HTTP
+  logln("[BOOT] Wait for AP to start");
+  delay(27000);
   wifiJoinOrAP();
 
   http.on("/", pageIndex);
