@@ -121,15 +121,14 @@ uint16_t statusBits=0;
 bool     prevMagOkX=false, prevMagOkY=false;
 uint8_t  prevErrorLogged=255;
 
+// Range latch
+RangeSel rangeLatched = R_I;
+
 // Grid classifier debug state
 int        gridBest      = 0;   // instantaneous best (from classifyGrid)
 int        gridCandidate = 0;   // currently considered node
 int        gridDebounced = 0;   // accepted node after debounce
 uint32_t   gridCandSince = 0;
-
-// Range latch
-enum RangeSel : uint8_t { R_UNKNOWN=0, R_I=1, R_II=2 };
-RangeSel rangeLatched = R_I;
 
 // Range names
 const char* rangeName(RangeSel r){
@@ -225,11 +224,6 @@ void updateDiscreteInputs(){
 }
 
 // ================= GRID CLASSIFIER (RANGE + POLYGON MODEL) =====================
-
-// Range latch
-
-
-RangeSel rangeLatched = R_I;
 
 // Node identifiers on the 2D plane
 enum GridSlot : uint8_t {
@@ -919,7 +913,7 @@ void setup(){
   prefs.begin("mtz_shift", false);
   loadGrid();
 
-  delay(30)
+  delay(30);
   // WiFi + HTTP
   wifiJoinOrAP();
 
