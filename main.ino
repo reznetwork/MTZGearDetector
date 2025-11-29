@@ -48,6 +48,7 @@
 // Early forward decls (avoid Arduino auto-prototype pitfalls)
 enum RangeSel : uint8_t; // grid (declared later)
 enum GridSlot : uint8_t; // grid (declared later)
+struct PolyNode;         // polygon node (declared later)
 
 // Function prototypes actually used
 uint16_t gearFromGrid(GridSlot gs, RangeSel r);
@@ -461,17 +462,14 @@ void maintainWifi(){
 }
 
 // ---------------- Logging ring buffer ----------------
+struct LogEntry { uint32_t t; uint16_t code; };
+constexpr size_t LOG_SIZE=256; LogEntry logBuf[LOG_SIZE]; size_t logHead=0;
+
 void logGear(uint16_t g){
-  extern LogEntry logBuf[];
-  extern size_t logHead;
   logBuf[logHead].t = millis();
   logBuf[logHead].code = g;
   logHead = (logHead+1) % LOG_SIZE;
 }
-
-// Ring buffer storage
-struct LogEntry { uint32_t t; uint16_t code; };
-constexpr size_t LOG_SIZE=256; LogEntry logBuf[LOG_SIZE]; size_t logHead=0;
 
 // heuristics
 inline bool magOK(uint16_t mag) { return (mag >= 1000 && mag <= 3500); }
