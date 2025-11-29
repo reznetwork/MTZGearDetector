@@ -46,11 +46,8 @@
 #include <stdint.h>
 
 // Early forward decls (avoid Arduino auto-prototype pitfalls)
-enum RangeSel : uint8_t { R_UNKNOWN=0, R_I=1, R_II=2 };
+enum RangeSel : uint8_t; // grid (declared later)
 enum GridSlot : uint8_t; // grid (declared later)
-
-struct PolyNode;
-
 
 // Function prototypes actually used
 uint16_t gearFromGrid(GridSlot gs, RangeSel r);
@@ -121,14 +118,15 @@ uint16_t statusBits=0;
 bool     prevMagOkX=false, prevMagOkY=false;
 uint8_t  prevErrorLogged=255;
 
-// Range latch
-RangeSel rangeLatched = R_I;
-
 // Grid classifier debug state
 int        gridBest      = 0;   // instantaneous best (from classifyGrid)
 int        gridCandidate = 0;   // currently considered node
 int        gridDebounced = 0;   // accepted node after debounce
 uint32_t   gridCandSince = 0;
+
+// Range latch
+enum RangeSel : uint8_t { R_UNKNOWN=0, R_I=1, R_II=2 };
+RangeSel rangeLatched = R_I;
 
 // Range names
 const char* rangeName(RangeSel r){
@@ -223,26 +221,45 @@ void updateDiscreteInputs(){
   if (gearCode == 102) { mb.Ists(21, true); return; }
 }
 
-// ================= GRID CLASSIFIER (RANGE + POLYGON MODEL) =====================
-
-// Node identifiers on the 2D plane
+// ================= GRID CLASSIFIER (RANGE + HYSTERESIS) =====================
 enum GridSlot : uint8_t {
-  GS_N = 0,       // Neutral (center reference)
-  GS_SEL_I,       // selector I
-  GS_SEL_II,      // selector II
+  GS_N=0,        // Neutral (center reference)
+  GS_SEL_I,      // selector I
+  GS_SEL_II,     // selector II
   // Top row (y=+1)
-  GS_Xm1_Yp1,     // (-1,+1) -> 4/7
-  GS_X0_Yp1,      // ( 0,+1) -> 9 (II only)
-  GS_Xp1_Yp1,     // (+1,+1) -> 1/2
-  // Middle row (y=0)
-  GS_Xm1_Y0,      // (-1,0) -> N
-  GS_Xp1_Y0,      // (+1,0) -> N
+  GS_Xn1_Yp1,    // (-1,+1) -> 4/7
+  GS_X0_Yp1,     // ( 0,+1) -> 9 (II only)
+  GS_Xp1_Yp1,    // (+1,+1) -> 1/2
+  // Middle row (y=0) — neutral across columns
+  GS_Xn1_Y0,     // (-1,0) -> N
+  GS_Xp1_Y0,     // (+1,0) -> N
   // Bottom row (y=-1)
-  GS_Xm1_Yn1,     // (-1,-1) -> 5/8
-  GS_X0_Yn1,      // ( 0,-1) -> 3/6
-  GS_Xp1_Yn1,     // (+1,-1) -> R1/R2
+  GS_Xn1_Yn1,    // (-1,-1) -> 5/8
+  GS_X0_Yn1,     // ( 0,-1) -> 3/6
+  GS_Xp1_Yn1,    // (+1,-1) -> R1/R2
   GS_COUNT
 };
+
+// Correct grid mapping for mirrored + 90° CW layout
+uint16_t gearFromGrid(GridSlot gs, RangeSel r){
+  switch(gs){
+    case GS_N:         return 0; // neutral reference
+    case GS_SEL_I:     return 0; // selection action, gear not engaged yet
+    case GS_SEL_II:    return 0;
+    // Top row y=+1
+    case GS_Xn1_Yp1:   return (r==R_I) ? 4 : (r==R_II ? 7 : 65535);
+    case GS_X0_Yp1:    return (r==R_II) ? 9 : 65535;   // II only
+    case GS_Xp1_Yp1:   return (r==R_I) ? 1 : (r==R_II ? 2 : 65535);
+    // Middle row
+    case GS_Xn1_Y0:    return 0;  // neutral
+    case GS_Xp1_Y0:    return 0;  // neutral
+    // Bottom row y=-1
+    case GS_Xn1_Yn1:   return (r==R_I) ? 5 : (r==R_II ? 8 : 65535);
+    case GS_X0_Yn1:    return (r==R_I) ? 3 : (r==R_II ? 6 : 65535);
+    case GS_Xp1_Yn1:   return (r==R_I) ? 101 : (r==R_II ? 102 : 65535); // R1/R2
+    default:           return 65535;
+  }
+}
 
 static const char* GRID_NAMES[GS_COUNT] = {
   "N", "SEL_I", "SEL_II",
@@ -251,34 +268,9 @@ static const char* GRID_NAMES[GS_COUNT] = {
   "X-1_Y-1", "X0_Y-1", "X+1_Y-1"
 };
 
-// Correct gear mapping (range-aware)
-uint16_t gearFromGrid(GridSlot gs, RangeSel r){
-  switch(gs){
-    case GS_N:         return 0; // neutral reference
-    case GS_SEL_I:     return 0; // selection action
-    case GS_SEL_II:    return 0;
-
-    // Top row y=+1
-    case GS_Xm1_Yp1:   return (r==R_I)  ? 4   : (r==R_II ? 7   : 65535);
-    case GS_X0_Yp1:    return (r==R_II) ? 9   : 65535;           // II only
-    case GS_Xp1_Yp1:   return (r==R_I)  ? 1   : (r==R_II ? 2   : 65535);
-
-    // Middle row
-    case GS_Xm1_Y0:    return 0;  // neutral
-    case GS_Xp1_Y0:    return 0;  // neutral
-
-    // Bottom row y=-1
-    case GS_Xm1_Yn1:   return (r==R_I)  ? 5   : (r==R_II ? 8   : 65535);
-    case GS_X0_Yn1:    return (r==R_I)  ? 3   : (r==R_II ? 6   : 65535);
-    case GS_Xp1_Yn1:   return (r==R_I)  ? 101 : (r==R_II ? 102 : 65535); // R1/R2
-
-    default:           return 65535;
-  }
-}
-
 // ---- Polygon-based plane model ----
 // Each grid slot is represented as a polygon in (X,Y) space.
-// Multiple calibration calls add rectangles (4 vertices each) to the polygon.
+// Multiple calibration calls can add rectangles (4 vertices each) to the polygon.
 
 constexpr uint8_t MAX_POLY_VERTS = 24;  // per node, tune as needed
 
@@ -291,19 +283,20 @@ struct PolyNode {
 
 struct PlanePack {
   uint32_t magic   = 0xA11D5E77;  // 'all set'
-  uint16_t version = 0x0200;      // polygon format version
+  uint16_t version = 0x0200;      // bumped version for polygon format
   PolyNode node[GS_COUNT];
 };
 
 PlanePack planeCal;
 bool      gridMode      = true;   // polygon classifier enabled
+// rangeLatched and gridNode declared earlier / nearby
 GridSlot  gridNode      = GS_N;
 
-// These are still used in JSON/Modbus as tunables
+// Hysteresis thresholds kept for compatibility / UI (no longer used in classifyGrid)
 uint32_t GRID_ENTER_TH = 7000;
 uint32_t GRID_EXIT_TH  = 12000;
 
-// --- Point-in-polygon test (even/odd rule) ---
+// --- Simple point-in-polygon test (even/odd rule) ---
 static bool pointInPoly(const PolyNode &p, uint16_t px, uint16_t py) {
   if (!p.valid || p.n < 3) return false;
   bool inside = false;
@@ -359,6 +352,7 @@ void clearGrid(){
 
 // Sampling: build an axis-aligned rectangle around the lever movement
 // and append it as 4 vertices into the polygon for this node.
+// Multiple calls -> union of several rectangles -> polygon-ish region.
 void sampleGrid(GridSlot s, uint16_t N=80){
   uint32_t sx=0, sy=0;
   uint16_t minX=65535, maxX=0, minY=65535, maxY=0;
@@ -913,7 +907,6 @@ void setup(){
   prefs.begin("mtz_shift", false);
   loadGrid();
 
-  delay(30);
   // WiFi + HTTP
   wifiJoinOrAP();
 
