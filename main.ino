@@ -678,25 +678,41 @@ function act(a){
 
   const X_MIN   = 3500;
   const X_MAX   = 3900;
-  const Y_RANGE = 4096;
-  const Y_HALF  = Y_RANGE / 2;
+  const Y_RANGE    = 4096;
+  const Y_CROP_TOP = -300;  // shows 300 units above zero
+  const Y_CROP_BOT = 3700;  // shows 3700 units below zero
 
   function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
   function wrapY(y){
-    // wrap so that 0 sits at the vertical center of the canvas
-    return ((y + Y_HALF) % Y_RANGE + Y_RANGE) % Y_RANGE - Y_HALF;
+    // Wrap so that 0 sits at the vertical center of the canvas and crop to
+    // the requested vertical window (300 above zero, 3700 below zero).
+    const wrapped = (y > Y_CROP_BOT) ? y - Y_RANGE : y;
+    return clamp(wrapped, Y_CROP_TOP, Y_CROP_BOT);
   }
 
-  // Map raw readings to canvas with X cropped to [3500,3900] and Y wrapped
-  // around 0 so the discontinuity is centered vertically on the canvas.
+  function displayToRawY(y){
+    // Convert display-domain Y (which can be negative around the wrap) back
+    // into the raw 0..4095 range expected by the backend readings.
+    return (y < 0) ? y + Y_RANGE : y;
+  }
+
+  // Map raw readings to canvas with X cropped to [3500,3900] and Y cropped to
+  // [-300, 3700], keeping 0 at the vertical center of the canvas.
   function sx(x){
     const clamped = clamp(x, X_MIN, X_MAX);
     return ((clamped - X_MIN) / (X_MAX - X_MIN)) * canvas.width;
   }
   function sy(y){
     const wy = wrapY(y);
-    const t  = (wy + Y_HALF) / (Y_RANGE - 1);
-    return canvas.height - t * canvas.height;
+    const center = canvas.height / 2;
+
+    if (wy <= 0){
+      const t = wy / Y_CROP_TOP; // -300 => 1 (top), 0 => 0 (center)
+      return center - t * center;
+    }
+
+    const t = wy / Y_CROP_BOT; // 0 => 0, 3700 => 1 (bottom)
+    return center + t * (canvas.height - center);
   }
 
   function drawSnapshot(j){
@@ -708,10 +724,10 @@ function act(a){
     ctx.globalAlpha = 0.25;
     for (let t=0; t<=4; t++){
       const xVal = X_MIN + (t/4) * (X_MAX - X_MIN);
-      const yVal = -Y_HALF + (t/4) * (Y_RANGE - 1);
+      const yVal = Y_CROP_TOP + (t/4) * (Y_CROP_BOT - Y_CROP_TOP);
 
       const x = sx(xVal);
-      const y = sy(yVal);
+      const y = sy(displayToRawY(yVal));
       ctx.beginPath();
       ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
       ctx.beginPath();
