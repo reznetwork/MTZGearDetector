@@ -48,6 +48,7 @@
 // Early forward decls (avoid Arduino auto-prototype pitfalls)
 enum RangeSel : uint8_t; // grid (declared later)
 enum GridSlot : uint8_t; // grid (declared later)
+struct PolyNode;         // polygon node (declared later)
 
 // Function prototypes actually used
 uint16_t gearFromGrid(GridSlot gs, RangeSel r);
