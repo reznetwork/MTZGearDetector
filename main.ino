@@ -298,9 +298,37 @@ GridSlot  gridNode      = GS_N;
 // Hysteresis thresholds kept for compatibility / UI (no longer used in classifyGrid)
 uint32_t GRID_ENTER_TH = 7000;
 uint32_t GRID_EXIT_TH  = 12000;
+uint16_t GRID_POLY_PAD = 0;      // padding (in raw units) to expand polygons during classification
 
 // --- Simple point-in-polygon test (even/odd rule) ---
-static bool pointInPoly(const PolyNode &p, uint16_t px, uint16_t py) {
+static inline uint32_t dist2PointSeg(int32_t px, int32_t py, int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
+  int32_t vx = x2 - x1;
+  int32_t vy = y2 - y1;
+  int32_t wx = px - x1;
+  int32_t wy = py - y1;
+
+  int32_t denom = vx * vx + vy * vy;
+  if (denom == 0) {
+    // Degenerate edge: treat as a point
+    int32_t dx = px - x1;
+    int32_t dy = py - y1;
+    return (uint32_t)(dx * dx + dy * dy);
+  }
+
+  // Project (w) onto (v), clamp to segment [0,1]
+  float t = (float)(wx * vx + wy * vy) / (float)denom;
+  if (t < 0.0f) t = 0.0f;
+  else if (t > 1.0f) t = 1.0f;
+
+  float cx = (float)x1 + t * (float)vx;
+  float cy = (float)y1 + t * (float)vy;
+
+  float dx = (float)px - cx;
+  float dy = (float)py - cy;
+  return (uint32_t)(dx * dx + dy * dy);
+}
+
+static bool pointInPoly(const PolyNode &p, uint16_t px, uint16_t py, uint16_t pad = 0) {
   if (!p.valid || p.n < 3) return false;
   bool inside = false;
 
@@ -311,18 +339,27 @@ static bool pointInPoly(const PolyNode &p, uint16_t px, uint16_t py) {
     // Check if edge (xi,yi)-(xj,yj) crosses the horizontal ray at y=py
     bool intersect = ((yi > py) != (yj > py)) &&
                      ((int32_t)px <
-                      (int32_t)(xj - xi) * (int32_t)(py - yi) / (int32_t)(yj - yi) +
-                      (int32_t)xi);
+                     (int32_t)(xj - xi) * (int32_t)(py - yi) / (int32_t)(yj - yi) +
+                     (int32_t)xi);
     if (intersect) inside = !inside;
   }
-  return inside;
+  if (inside || pad == 0) return inside;
+
+  // If outside, allow a padded halo around the polygon edges.
+  uint32_t pad2 = (uint32_t)pad * (uint32_t)pad;
+  uint32_t best = 0xFFFFFFFFu;
+  for (uint8_t i = 0, j = p.n - 1; i < p.n; j = i++) {
+    uint32_t d2 = dist2PointSeg(px, py, p.x[j], p.y[j], p.x[i], p.y[i]);
+    if (d2 < best) best = d2;
+  }
+  return best <= pad2;
 }
 
 // For debug/heatmap: 0 if inside, squared distance to closest vertex otherwise.
 static uint32_t polyScore(uint8_t idx, uint16_t px, uint16_t py) {
   const auto &p = planeCal.node[idx];
   if (!p.valid || p.n == 0) return 0xFFFFFFFFu;
-  if (pointInPoly(p, px, py)) return 0;
+  if (pointInPoly(p, px, py, GRID_POLY_PAD)) return 0;
 
   uint32_t best = 0xFFFFFFFFu;
   for (uint8_t i = 0; i < p.n; ++i) {
@@ -401,7 +438,7 @@ GridSlot classifyGrid(uint16_t x, uint16_t y){
   for (int i=0;i<GS_COUNT;i++){
     const auto &p = planeCal.node[i];
     if (!p.valid) continue;
-    if (pointInPoly(p, x, y)) {
+    if (pointInPoly(p, x, y, GRID_POLY_PAD)) {
       best  = (GridSlot)i;
       found = true;
       break;          // first matching polygon wins
@@ -804,6 +841,7 @@ void pageGridTune(){
   s += "<label>RANGE_DEBOUNCE_MS <input name='rdb' type='number' min='0' max='65535' value='" + String(RANGE_DEBOUNCE_MS) + "'></label><br>";
   s += "<label>GRID_ENTER_TH <input name='enter' type='number' min='0' max='65535' value='" + String(GRID_ENTER_TH) + "'></label><br>";
   s += "<label>GRID_EXIT_TH <input name='exit' type='number' min='0' max='65535' value='" + String(GRID_EXIT_TH) + "'></label><br>";
+  s += "<label>GRID_POLY_PAD <input name='pad' type='number' min='0' max='1023' value='" + String(GRID_POLY_PAD) + "'></label><br>";
   s += "<button type='submit'>Save</button>";
   s += "</form></body></html>";
   http.send(200,"text/html",s);
@@ -815,12 +853,14 @@ void apiGridTunePost(){
   if (http.hasArg("rdb"))    RANGE_DEBOUNCE_MS = http.arg("rdb").toInt();
   if (http.hasArg("enter"))  GRID_ENTER_TH = http.arg("enter").toInt();
   if (http.hasArg("exit"))   GRID_EXIT_TH  = http.arg("exit").toInt();
+  if (http.hasArg("pad"))    GRID_POLY_PAD = (uint16_t)http.arg("pad").toInt();
   // reflect to Modbus
   mb.Hreg(18, (uint16_t)GRID_STABLE_MS);
   mb.Hreg(19, (uint16_t)GEAR_DEBOUNCE_MS);
   mb.Hreg(20, (uint16_t)RANGE_DEBOUNCE_MS);
   mb.Hreg(21, (uint16_t)GRID_ENTER_TH);
   mb.Hreg(22, (uint16_t)GRID_EXIT_TH);
+  mb.Hreg(23, (uint16_t)GRID_POLY_PAD);
   http.send(200, "text/html", "Saved. <a href='/grid/tune'>Back</a>");
 }
 
@@ -830,6 +870,7 @@ void pollGridTunablesFromModbus(){
   RANGE_DEBOUNCE_MS = mb.Hreg(20);
   GRID_ENTER_TH     = mb.Hreg(21);
   GRID_EXIT_TH      = mb.Hreg(22);
+  GRID_POLY_PAD     = mb.Hreg(23);
 }
 
 // ---- Grid scores API ----
@@ -896,6 +937,7 @@ void applyModbus(){
   mb.Hreg(20, (uint16_t)RANGE_DEBOUNCE_MS);
   mb.Hreg(21, (uint16_t)GRID_ENTER_TH);
   mb.Hreg(22, (uint16_t)GRID_EXIT_TH);
+  mb.Hreg(23, (uint16_t)GRID_POLY_PAD);
 
   // Mirror to Discrete Inputs (1xxxx)
   updateDiscreteInputs();
@@ -964,6 +1006,7 @@ void setup(){
   mb.Hreg(20, (uint16_t)RANGE_DEBOUNCE_MS);
   mb.Hreg(21, (uint16_t)GRID_ENTER_TH);
   mb.Hreg(22, (uint16_t)GRID_EXIT_TH);
+  mb.Hreg(23, (uint16_t)GRID_POLY_PAD);
 }
 
 void loop(){
